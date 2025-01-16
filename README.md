@@ -53,7 +53,7 @@ python web_downloader.py "https://archlinux.org" "*.jpg|*.png" "~/Downloads/Arch
 
 ### Opcjonalne argumenty:
 
-- --cookies-from-browser: Pobierz ciasteczka z przeglądarki (firefox, chrome, librewolf).
+- --cookies-from-browser: Pobranie ciasteczek z przeglądarki (firefox, chrome, librewolf) dla podanej strony.
 
     - Przykład:
     ```bash
