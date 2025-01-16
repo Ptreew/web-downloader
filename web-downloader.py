@@ -1,0 +1,314 @@
+import os
+import re
+import aiohttp
+import asyncio
+from urllib.parse import urljoin, urlparse
+import hashlib
+import uuid
+import random
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+import lxml.html
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0 Safari/537.36"
+}
+
+# Nadawanie rozszerzenia na podstawie MIME
+extension_map = {
+            'image/png': '.png',
+            'image/jpeg': '.jpg',
+            'image/gif': '.gif',
+            'image/bmp': '.bmp',
+            'image/webp': '.webp',
+            'image/svg+xml': '.svg',
+            'application/json': '.json',
+            'text/html': '.html',
+            'text/css': '.css',
+            'application/javascript': '.js',
+            'application/typescript': '.ts',
+            'text/x-python': '.py',
+            'text/x-java-source': '.java',
+            'audio/mpeg': '.mp3',
+            'audio/wav': '.wav',
+            'video/webm': '.webm',
+            'video/mp4': '.mp4',
+            'application/pdf': '.pdf',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
+            'application/zip': '.zip',
+            'application/x-rar-compressed': '.rar',
+            'application/gzip': '.tar.gz',
+            'text/plain': '.txt',
+            'application/x-yaml': '.yaml',
+            'application/xml': '.xml',
+            'image/vnd.microsoft.icon': '.ico',
+            'image/tiff': '.tiff'
+}
+
+# Pobranie ciasteczek z przeglądarki (testowane na systemie Linux)
+def get_cookies_from_browser(browser, domain):
+    try:
+        if browser == "librewolf":
+            import browser_cookie3
+            cookies = browser_cookie3.librewolf(domain_name=domain)
+        elif browser == "firefox":
+            import browser_cookie3
+            cookies = browser_cookie3.firefox(domain_name=domain)
+        elif browser == "chrome":
+            import browser_cookie3
+            cookies = browser_cookie3.chrome(domain_name=domain)
+        else:
+            print(f"Nieobsługiwana przeglądarka: {browser}")
+            return {}
+
+        cookie_dict = {cookie.name: cookie.value for cookie in cookies}
+        if not cookie_dict:
+            print(f"Brak ciasteczek dla domeny {domain} w przeglądarce {browser}.")
+        else:
+            print(f"Pobrano ciasteczka z {browser} dla domeny {domain}: {cookie_dict}")
+        return cookie_dict
+    except Exception as e:
+        print(f"Błąd przy pobieraniu ciasteczek z {browser}: {e}")
+        return {}
+
+# Tworzenie katalogu, jeśli nie istnieje
+def ensure_directory(path):
+    if not os.path.exists(path):
+        os.makedirs(path)
+
+# Funkcja zapisująca wbudowane SVG do pliku
+def extract_and_save_svgs(html_content, output_directory, extensions):
+    try:
+        # Sprawdzenie, czy 'svg' znajduje się w podanych rozszerzeniach
+        if 'svg' not in extensions:
+            print("Pomijanie osadzonych SVG - rozszerzenie 'svg' nie zostało uwzględnione.")
+            return
+
+        # Parsowanie HTML
+        tree = lxml.html.fromstring(html_content)
+
+        # Znajdowanie elementów <svg>
+        svg_elements = tree.xpath('//svg')
+
+        for i, svg in enumerate(svg_elements):
+            # Konwersja elementu <svg> do stringa
+            svg_code = lxml.html.tostring(svg, pretty_print=True, encoding='unicode')
+
+            # Generowanie nazwy pliku
+            filename = os.path.join(output_directory, f"embedded_svg_{i}.svg")
+
+            # Zapisywanie kodu SVG do pliku
+            with open(filename, 'w', encoding='utf-8') as f:
+                f.write(svg_code)
+            print(f"Zapisano wbudowane SVG do {filename}")
+
+    except Exception as e:
+        print(f"Błąd przy ekstrakcji SVG: {e}")
+
+
+# Mechanizm ponowienia próby
+async def download_with_retry(url, retries=3, delay=3, cookies=None):
+    for i in range(retries):
+        try:
+            async with aiohttp.ClientSession(headers=HEADERS, cookies=cookies) as session:
+                async with session.get(url, timeout=10) as response:
+                    response.raise_for_status()
+                    return await response.read()
+        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+            if i < retries - 1:
+                print(f"Błąd {e}, ponawiam próbę ({i + 1}/{retries})...")
+                await asyncio.sleep(delay)
+            else:
+                print(f"Nie udało się pobrać pliku {url} po {retries} próbach.")
+                raise
+
+# Pobieranie pliku z danego URL
+async def download_file(url, output_directory, downloaded_files, cookies):
+    try:
+        # Sprawdzanie, czy plik został już pobrany
+        url_hash = hashlib.md5(url.encode('utf-8')).hexdigest()
+        if url_hash in downloaded_files:
+            print(f"Pominięto {url} (plik już pobrany).")
+            return
+
+        # Pobranie danych pliku
+        file_data = await download_with_retry(url, cookies=cookies)
+
+        # Pobranie MIME typu pliku
+        mime_type = await get_mime_type(url)
+        if not mime_type:
+            print(f"Pominięto plik {url} - nie udało się określić typu MIME.")
+            return
+
+        # Nadawanie rozszerzenia na podstawie MIME
+        extension = extension_map.get(mime_type, '')
+        if not extension:
+            print(f"Pominięto plik {url} - MIME {mime_type} nieobsługiwane.")
+            return
+
+        # Generowanie nazwy pliku z rozszerzeniem
+        parsed_url = urlparse(url)
+        filename = os.path.basename(parsed_url.path)
+
+        # Jeśli brakuje nazwy pliku lub rozszerzenia, nadamy odpowiednie rozszerzenie
+        if not filename or '.' not in filename:
+            filename = f"{uuid.uuid4().hex}{extension}"
+        elif not filename.endswith(extension):
+            filename += extension
+
+        output_path = os.path.join(output_directory, filename)
+
+        # Sprawdzanie, czy plik już istnieje
+        if os.path.exists(output_path):
+            print(f"Plik {filename} już istnieje, pomijam.")
+        else:
+            # Zapis pliku
+            with open(output_path, 'wb') as f:
+                f.write(file_data)
+            downloaded_files.add(url_hash)
+            print(f"Pobrano: {url} do {output_path}")
+    except Exception as e:
+        print(f"Błąd przy pobieraniu pliku {url}: {e}")
+
+
+
+# Użycie Selenium do dynamicznego renderowania strony
+def get_dynamic_page_content(url, extensions):
+    try:
+        options = Options()
+        options.add_argument("--headless")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+
+        with webdriver.Chrome(options=options) as driver:
+            driver.get(url)
+            WebDriverWait(driver, 15).until(
+                EC.presence_of_element_located((By.TAG_NAME, "body"))
+            )
+            page_source = driver.page_source
+
+            # Pobranie dynamicznie załadowanych linków i obrazów
+            links = set()
+            for element in driver.find_elements(By.XPATH, '//a[@href] | //img[@src]'):
+                if element.tag_name == "a":
+                    href = element.get_attribute("href")
+                    if href:
+                        links.add(href)
+                elif element.tag_name == "img":
+                    src = element.get_attribute("src")
+                    if src:
+                        links.add(src)
+
+            print(f"Znaleziono {len(links)} linków dynamicznych na stronie.")
+            return page_source, links
+    except Exception as e:
+        print(f"Błąd w Selenium: {e}")
+        return "", set()
+
+
+# Sprawdzanie typu MIME pliku
+async def get_mime_type(url):
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.head(url, allow_redirects=True, timeout=10) as response:
+                response.raise_for_status()
+                mime_type = response.headers.get('Content-Type', 'application/octet-stream').lower()
+
+                # Usuwanie parametru charset, jeśli istnieje
+                if ';' in mime_type:
+                    mime_type = mime_type.split(';')[0]
+
+                print(f"[DEBUG] MIME dla {url}: {mime_type}")
+                return mime_type
+    except Exception as e:
+        print(f"Błąd przy sprawdzaniu MIME dla {url}: {e}")
+        return 'application/octet-stream'
+
+
+# Przetwarzanie strony rekurencyjnie
+async def process_page(url, extensions, visited, downloaded_files, output_directory, semaphore, depth=0, max_depth=3,
+                       cookies=None):
+    await asyncio.sleep(random.uniform(0.5, 2))  # Losowe opóźnienie w celu uniknięcia detekcji botów
+    if url in visited or depth > max_depth:
+        return
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, timeout=10) as response:
+            response.raise_for_status()
+            html_content = await response.text()
+
+    # Wykrywanie i zapisywanie wbudowanych SVG
+    extract_and_save_svgs(html_content, output_directory, extensions)
+
+    visited.add(url)
+    print(f"Przetwarzanie: {url} na głębokości {depth}")
+
+    async with semaphore:  # Kontrola równoległych zadań
+        try:
+            # Pobierz treść dynamicznie za pomocą Selenium
+            html_content, dynamic_links = get_dynamic_page_content(url, extensions)
+
+            # Połącz linki z DOM dynamicznym i statycznym
+            all_links = set(re.findall(r'href=["\'](.*?)["\']|src=["\'](.*?)["\']', html_content))
+            all_links.update(dynamic_links)
+            all_links = {urljoin(url, link[0] or link[1]) for link in all_links}
+
+            for file_url in all_links:
+                # Pobieranie MIME i nadawanie rozszerzenia na podstawie MIME
+                mime_type = await get_mime_type(file_url)
+
+                print(f"[DEBUG] Analizowanie pliku: {file_url} z MIME {mime_type}")
+
+                # Sprawdzamy, czy typ MIME jest w mapie extension_map
+                if mime_type in extension_map:
+                    extension = extension_map[mime_type]
+
+                    # Jeśli rozszerzenie MIME pasuje do rozszerzeń podanych w argumentach
+                    if any(ext == extension.lstrip('.') for ext in extensions):
+                        await download_file(file_url, output_directory, downloaded_files, cookies)
+                    else:
+                        print(
+                            f"Pominięto {file_url} - MIME {mime_type} pasuje do {extension}, ale rozszerzenie nie pasuje do filtrów.")
+                else:
+                    print(f"Pominięto {file_url} - MIME {mime_type} nie znajduje się w mapie rozszerzeń.")
+        except Exception as e:
+            print(f"Błąd przy przetwarzaniu strony {url}: {e}")
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Pobieranie plików o wskazanych rozszerzeniach ze strony internetowej.")
+    parser.add_argument("url", help="URL strony internetowej do przetworzenia")
+    parser.add_argument("extensions", help="Rozszerzenia plików do pobrania, oddzielone '|' (np. *.jpg|*.png)")
+    parser.add_argument("output", help="Katalog, w którym będą zapisywane pliki")
+    parser.add_argument("--cookies-from-browser", help="Nazwa przeglądarki do pobrania ciasteczek (np. firefox, chrome, librewolf) - testowane jedynie w systemie Linux", default=None)
+    parser.add_argument("--max-depth", type=int, default=3, help="Maksymalna głębokość rekursji (domyślnie 3)")
+    parser.add_argument("--max-workers", type=int, default=5, help="Maksymalna liczba jednoczesnych połączeń (domyślnie 5)")
+
+    args = parser.parse_args()
+
+    extensions = [ext.strip().lower().lstrip('*.') for ext in args.extensions.split('|')]
+    domain = urlparse(args.url).netloc.replace('.', '_')
+    output_directory = os.path.join(args.output, domain)
+    ensure_directory(output_directory)
+
+    visited = set()
+    downloaded_files = set()
+    semaphore = asyncio.Semaphore(args.max_workers)  # Ograniczenie równoległych zadań
+
+    cookies = None
+    if args.cookies_from_browser:
+        cookies = get_cookies_from_browser(args.cookies_from_browser, urlparse(args.url).netloc)
+        if not cookies:
+            print(f"Nie udało się pobrać ciasteczek z przeglądarki {args.cookies_from_browser}. Kontynuuję bez ciasteczek.")
+
+    try:
+        asyncio.run(process_page(args.url, extensions, visited, downloaded_files, output_directory, semaphore, max_depth=args.max_depth, cookies=cookies))
+    except KeyboardInterrupt:
+        print("\nProgram został zatrzymany przez użytkownika.")
