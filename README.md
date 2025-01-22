@@ -2,10 +2,17 @@
 
 Ten program służy do pobierania plików o określonych rozszerzeniach z podanej strony internetowej. Wspiera dynamiczne renderowanie za pomocą Selenium oraz obsługę ciasteczek przeglądarek.
 
+## Dokumentacja
+
+Dokumentacja projektu znajduje się w pliku [dokumentacja.md](Dokumentacja/dokumentacja.md) i [dokumentacja.pdf](Dokumentacja/dokumentacja.pdf)
+
 ## Wymagania
 
 - Python 3.8 lub nowszy
-- Firefox (lub inna wspierana przeglądarka)
+- Przeglądarka bazująca na chromium (np. chrome lub brave), lub inna wspierana przeglądarka
+- [Chromedriver](https://googlechromelabs.github.io/chrome-for-testing/) w wersji 132.0.6834.83 lub nowszy umieszczony w katalogu głównym programu.
+
+---
 
 ## Instalacja i konfiguracja
 
@@ -34,7 +41,9 @@ Następnie zainstaluj zależności:
 pip install -r requirements.txt
 ```
 
-### Obsługa programu
+---
+
+## Obsługa programu
 
 Uruchomienie programu wymaga podania kilku argumentów wejściowych:
 
@@ -42,22 +51,22 @@ Uruchomienie programu wymaga podania kilku argumentów wejściowych:
 ```bash
 python web_downloader.py <URL> "<Rozszerzenia plików>" <Ścieżka wyjściowa>
 ```
-- <URL>: Adres URL strony do przetworzenia, `http://` lub `https://` jest wymagane.
-- <Rozszerzenia plików>: Rozszerzenia plików do pobrania (np. `"*.jpg|*.png"`).
-- <Ścieżka wyjściowa>: Katalog, w którym będą zapisywane pliki.
+- --url <URL>: Adres URL strony do przetworzenia, `http://` lub `https://` jest wymagane.
+- --extensions <Rozszerzenia plików>: Rozszerzenia plików do pobrania (np. `"*.jpg|*.png"`).
+- --output <Ścieżka wyjściowa>: Katalog, w którym będą zapisywane pliki.
   - Przykład:
 
 ```bash
-python web_downloader.py "https://archlinux.org" "*.jpg|*.png" "~/Downloads/ArchLinux"
+python web_downloader.py --url "https://archlinux.org" --extensions "*.jpg|*.png" --output "~/Downloads/ArchLinux"
 ```
 
 ### Opcjonalne argumenty:
 
-- --cookies-from-browser: Pobranie ciasteczek z przeglądarki (firefox, chrome, librewolf) dla podanej strony.
+- --cookies-from-browser: Pobierz ciasteczka z przeglądarki (firefox, chrome, librewolf).
 
     - Przykład:
     ```bash
-    python web_downloader.py "https://archlinux.org" "*.jpg|*.png" "~/Downloads/ArchLinux" --cookies-from-browser librewolf
+    python web_downloader.py --url "https://archlinux.org" --extensions "*.jpg|*.png" --output "~/Downloads/ArchLinux" --cookies-from-browser librewolf
     ```
 
 - --max-depth: Maksymalna głębokość przetwarzania strony (domyślnie: 3).
@@ -67,7 +76,23 @@ python web_downloader.py "https://archlinux.org" "*.jpg|*.png" "~/Downloads/Arch
 
 Możesz przerwać działanie programu w dowolnym momencie, naciskając `Ctrl+C`
 
+---
+
 ## Dodatkowe informacje
 
 - Obsługiwane typy plików to: `png`, `jpg`, `jpeg`, `gif`, `bmp`, `webp`, `svg`, `json`, `html`, `css`, `js`, `ts`, `py`, `java`, `mp3`, `wav`, `webm`, `mp4`, `pdf`, `docx`, `xlsx`, `zip`, `rar`, `tar.gz`, `txt`, `yaml`, `xml`, `ico`, `tiff`.
 
+---
+
+## Środowisko Testowe
+
+Środowisko testowe jest zbudowane na maszynie wirtualnej Alpine Linux uruchomionej w VirtualBoxie. System działa w trybie tekstowym (bez GUI) i jest w pełni skonfigurowany oraz gotowy do użycia.
+
+### Dane dostępowe
+
+- **Konto root**
+  - Login: `root`
+  - Hasło: `Zaq1@WSX`
+- **Konto piotr**
+  - Login: `piotr-131483`
+  - Hasło: `131483`

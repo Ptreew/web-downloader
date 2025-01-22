@@ -12,6 +12,10 @@ import lxml.html
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.service import Service
+
+CHROMEDRIVER_PATH = "chromedriver"  # Ścieżka do sterownika Chrome w wersji 132.0.6834.83
+chrome_service = Service(CHROMEDRIVER_PATH)
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0 Safari/537.36"
@@ -185,7 +189,7 @@ def get_dynamic_page_content(url, extensions):
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
 
-        with webdriver.Chrome(options=options) as driver:
+        with webdriver.Chrome(service=chrome_service, options=options) as driver:
             driver.get(url)
             WebDriverWait(driver, 15).until(
                 EC.presence_of_element_located((By.TAG_NAME, "body"))
@@ -284,10 +288,10 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="Pobieranie plików o wskazanych rozszerzeniach ze strony internetowej.")
-    parser.add_argument("url", help="URL strony internetowej do przetworzenia")
-    parser.add_argument("extensions", help="Rozszerzenia plików do pobrania, oddzielone '|' (np. *.jpg|*.png)")
-    parser.add_argument("output", help="Katalog, w którym będą zapisywane pliki")
-    parser.add_argument("--cookies-from-browser", help="Nazwa przeglądarki do pobrania ciasteczek (np. firefox, chrome, librewolf) - testowane jedynie w systemie Linux", default=None)
+    parser.add_argument("--url", required=True, help="URL strony internetowej do przetworzenia")
+    parser.add_argument("--extensions", required=True, help="Rozszerzenia plików do pobrania, oddzielone '|' (np. *.jpg|*.png)")
+    parser.add_argument("--output", default="download", help="Katalog, w którym będą zapisywane pliki")
+    parser.add_argument("--cookies-from-browser", default=None, help="Nazwa przeglądarki do pobrania ciasteczek (np. firefox, chrome, librewolf) - testowane jedynie w systemie Linux")
     parser.add_argument("--max-depth", type=int, default=3, help="Maksymalna głębokość rekursji (domyślnie 3)")
     parser.add_argument("--max-workers", type=int, default=5, help="Maksymalna liczba jednoczesnych połączeń (domyślnie 5)")
 
@@ -295,6 +299,8 @@ if __name__ == "__main__":
 
     extensions = [ext.strip().lower().lstrip('*.') for ext in args.extensions.split('|')]
     domain = urlparse(args.url).netloc.replace('.', '_')
+
+    # Tworzenie domyślnego katalogu wyjściowego, jeśli nie został podany
     output_directory = os.path.join(args.output, domain)
     ensure_directory(output_directory)
 
