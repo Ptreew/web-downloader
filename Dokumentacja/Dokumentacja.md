@@ -1,8 +1,8 @@
 # Dokumentacja projektu: Web File Downloader
 
-### Informacje o projekcie:
+### Informacje o projekcie
 
-**Nazwa projektu**: Web File Downloader
+**Nazwa projektu**: Web File Downloader 
 **Autor**: Pająk Piotr (numer albumu: 131483)
 **Wybrany projekt**: 3. Rekurencyjne Pobieranie Plików
 **Kolegium**: Kolegium Nauk Przyrodniczych, Uniwersytet Rzeszowski
