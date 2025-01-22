@@ -4,7 +4,7 @@ Ten program służy do pobierania plików o określonych rozszerzeniach z podane
 
 ## Dokumentacja
 
-Dokumentacja projektu znajduje się w pliku [Dokumentacja.md](Dokumentacja/Dokumentacja.md) i [Dokumentacja.pdf](Dokumentacja/Dokumentacja.pdf)
+Dokumentacja projektu znajduje się w pliku [Dokumentacja.pdf](Dokumentacja/Dokumentacja.pdf)
 
 ## Wymagania
 
