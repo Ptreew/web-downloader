@@ -234,10 +234,32 @@ async def get_mime_type(url):
         return 'application/octet-stream'
 
 
+def is_symlink_loop(url, visited_symlinks):
+    real_path = os.path.realpath(url)
+    if real_path in visited_symlinks:
+        return True
+    visited_symlinks.add(real_path)
+    return False
+
+"""def has_repeating_segments(url):
+    parsed = urlparse(url)
+    path_segments = parsed.path.strip('/').split('/')
+    if len(path_segments) > len(set(path_segments)):
+        print(f"Wykryto powtarzające się segmenty w URL: {url}")
+        return True
+    return False"""
+
 # Przetwarzanie strony rekurencyjnie
-async def process_page(url, extensions, visited, downloaded_files, output_directory, semaphore, depth=0, max_depth=3, cookies=None, session=None):
+async def process_page(url, extensions, visited, downloaded_files, output_directory, semaphore, depth=0, max_depth=3, cookies=None, session=None, visited_symlinks=None):
+    if visited_symlinks is None:
+        visited_symlinks = set()
+
+    """if has_repeating_segments(url):
+        print(f"Pominięto {url} - wykryto potencjalną nieskończoną pętlę.")
+        return"""
+
     # Jeśli strona została już odwiedzona, pomiń
-    if url in visited:
+    if url in visited or is_symlink_loop(url, visited_symlinks):
         return
 
     # Dodaj stronę do odwiedzonych
