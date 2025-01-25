@@ -227,7 +227,7 @@ async def get_mime_type(url):
                 if ';' in mime_type:
                     mime_type = mime_type.split(';')[0]
 
-                print(f"[DEBUG] MIME dla {url}: {mime_type}")
+                # print(f"[DEBUG] MIME dla {url}: {mime_type}")
                 return mime_type
     except Exception as e:
         print(f"Błąd przy sprawdzaniu MIME dla {url}: {e}")
@@ -235,53 +235,73 @@ async def get_mime_type(url):
 
 
 # Przetwarzanie strony rekurencyjnie
-async def process_page(url, extensions, visited, downloaded_files, output_directory, semaphore, depth=0, max_depth=3,
-                       cookies=None):
-    await asyncio.sleep(random.uniform(0.5, 2))  # Losowe opóźnienie w celu uniknięcia detekcji botów
-    if url in visited or depth > max_depth:
+async def process_page(url, extensions, visited, downloaded_files, output_directory, semaphore, depth=0, max_depth=3, cookies=None, session=None):
+    # Jeśli strona została już odwiedzona, pomiń
+    if url in visited:
         return
 
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url, timeout=10) as response:
-            response.raise_for_status()
-            html_content = await response.text()
-
-    # Wykrywanie i zapisywanie wbudowanych SVG
-    extract_and_save_svgs(html_content, output_directory, extensions)
-
+    # Dodaj stronę do odwiedzonych
     visited.add(url)
-    print(f"Przetwarzanie: {url} na głębokości {depth}")
 
-    async with semaphore:  # Kontrola równoległych zadań
-        try:
-            # Pobierz treść dynamicznie za pomocą Selenium
-            html_content, dynamic_links = get_dynamic_page_content(url, extensions)
+    # Jeśli przekroczono maksymalną głębokość, nie przetwarzaj linków wewnętrznych
+    if depth > max_depth:
+        print(f"Pominięto {url} - osiągnięto maksymalną głębokość {max_depth}.")
+        return
 
-            # Połącz linki z DOM dynamicznym i statycznym
-            all_links = set(re.findall(r'href=["\'](.*?)["\']|src=["\'](.*?)["\']', html_content))
-            all_links.update(dynamic_links)
-            all_links = {urljoin(url, link[0] or link[1]) for link in all_links}
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=10) as response:
+                response.raise_for_status()
 
-            for file_url in all_links:
-                # Pobieranie MIME i nadawanie rozszerzenia na podstawie MIME
-                mime_type = await get_mime_type(file_url)
-
-                print(f"[DEBUG] Analizowanie pliku: {file_url} z MIME {mime_type}")
-
-                # Sprawdzamy, czy typ MIME jest w mapie extension_map
-                if mime_type in extension_map:
-                    extension = extension_map[mime_type]
-
-                    # Jeśli rozszerzenie MIME pasuje do rozszerzeń podanych w argumentach
-                    if any(ext == extension.lstrip('.') for ext in extensions):
-                        await download_file(file_url, output_directory, downloaded_files, cookies)
-                    else:
-                        print(
-                            f"Pominięto {file_url} - MIME {mime_type} pasuje do {extension}, ale rozszerzenie nie pasuje do filtrów.")
+                # Sprawdź typ MIME, aby upewnić się, że to HTML
+                content_type = response.headers.get('Content-Type', '').lower()
+                if 'text/html' in content_type:
+                    html_content = await response.text()
                 else:
-                    print(f"Pominięto {file_url} - MIME {mime_type} nie znajduje się w mapie rozszerzeń.")
-        except Exception as e:
-            print(f"Błąd przy przetwarzaniu strony {url}: {e}")
+                    print(f"Pominięto {url} - typ MIME to {content_type}, nie jest to strona HTML.")
+                    return
+
+        # Wykrywanie i zapisywanie wbudowanych SVG
+        extract_and_save_svgs(html_content, output_directory, extensions)
+
+        print(f"Przetwarzanie: {url} na głębokości {depth}")
+
+        # Pobierz treść dynamicznie za pomocą Selenium
+        html_content, dynamic_links = get_dynamic_page_content(url, extensions)
+
+        # Połącz linki z DOM dynamicznym i statycznym
+        all_links = set(re.findall(r'href=["\'](.*?)["\']|src=["\'](.*?)["\']', html_content))
+        all_links.update(dynamic_links)
+        all_links = {urljoin(url, link[0] or link[1]) for link in all_links}
+
+        # Iteruj po znalezionych linkach
+        async with semaphore:  # Kontrola równoległych zadań
+            for file_url in all_links:
+                try:
+                    # Pobieranie MIME i nadawanie rozszerzenia na podstawie MIME
+                    mime_type = await get_mime_type(file_url)
+
+                    if mime_type in extension_map:
+                        extension = extension_map[mime_type]
+
+                        # Jeśli rozszerzenie MIME pasuje do rozszerzeń podanych w argumentach
+                        if any(ext == extension.lstrip('.') for ext in extensions):
+                            await download_file(file_url, output_directory, downloaded_files, cookies)
+                        else:
+                            print(
+                                f"Pominięto {file_url} - MIME {mime_type} pasuje do {extension}, ale rozszerzenie nie pasuje do filtrów.")
+                    else:
+                        print(f"Pominięto {file_url} - MIME {mime_type} nie znajduje się w mapie rozszerzeń.")
+
+                    # Wywołaj rekurencyjnie `process_page` dla znalezionych linków, zwiększając głębokość
+                    await process_page(file_url, extensions, visited, downloaded_files, output_directory, semaphore, depth=depth + 1, max_depth=max_depth, cookies=cookies)
+
+                except Exception as e:
+                    print(f"Błąd przy przetwarzaniu linku {file_url}: {e}")
+
+    except Exception as e:
+        print(f"Błąd przy przetwarzaniu strony {url}: {e}")
+
 
 
 if __name__ == "__main__":
