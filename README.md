@@ -94,5 +94,5 @@ Możesz przerwać działanie programu w dowolnym momencie, naciskając `Ctrl+C`
   - Login: `root`
   - Hasło: `Zaq1@WSX`
 - **Konto piotr**
-  - Login: `piotr-131483`
+  - Login: `piotr`
   - Hasło: `131483`
