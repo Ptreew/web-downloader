@@ -80,7 +80,7 @@ Możesz przerwać działanie programu w dowolnym momencie, naciskając `Ctrl+C`
 
 ## Dodatkowe informacje
 
-- Obsługiwane typy plików to: `png`, `jpg`, `jpeg`, `gif`, `bmp`, `webp`, `svg`, `json`, `html`, `css`, `js`, `ts`, `py`, `java`, `mp3`, `wav`, `webm`, `mp4`, `pdf`, `docx`, `xlsx`, `zip`, `rar`, `tar.gz`, `txt`, `yaml`, `xml`, `ico`, `tiff`.
+- Użytkownik może pobierać pliki o dowolnym rozszerzeniu, w tym: `png`, `jpg`, `jpeg`, `gif`, `bmp`, `webp`, `svg`, `json`, `html`, `css`, `js`, `ts`, `py`, `java`, `mp3`, `wav`, `webm`, `mp4`, `pdf`, `docx`, `xlsx`, `zip`, `rar`, `tar.gz`, `txt`, `yaml`, `xml`, `ico`, `tiff`.
 
 ---
 

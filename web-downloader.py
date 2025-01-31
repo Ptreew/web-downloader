@@ -50,7 +50,8 @@ extension_map = {
             'application/x-yaml': '.yaml',
             'application/xml': '.xml',
             'image/vnd.microsoft.icon': '.ico',
-            'image/tiff': '.tiff'
+            'image/tiff': '.tiff',
+            'application/octet-stream': '.iso'
 }
 
 # Pobranie ciasteczek z przeglądarki (testowane na systemie Linux)
@@ -102,13 +103,14 @@ def extract_and_save_svgs(html_content, output_directory, extensions):
             # Konwersja elementu <svg> do stringa
             svg_code = lxml.html.tostring(svg, pretty_print=True, encoding='unicode')
 
-            # Generowanie nazwy pliku
-            filename = os.path.join(output_directory, f"embedded_svg_{i}.svg")
+            # Tworzenie pełnej ścieżki zapisu pliku
+            filename = f"embedded_svg_{i}.svg"
+            output_path = os.path.join(output_directory, filename)
 
-            # Zapisywanie kodu SVG do pliku
-            with open(filename, 'w', encoding='utf-8') as f:
+           # Zapis pliku SVG
+            with open(output_path, 'w', encoding='utf-8') as f:
                 f.write(svg_code)
-            print(f"Zapisano wbudowane SVG do {filename}")
+            print(f"Zapisano osadzone SVG do {output_path}")
 
     except Exception as e:
         print(f"Błąd przy ekstrakcji SVG: {e}")
@@ -130,9 +132,15 @@ async def download_with_retry(url, retries=3, delay=3, cookies=None):
                 print(f"Nie udało się pobrać pliku {url} po {retries} próbach.")
                 raise
 
+
+
 # Pobieranie pliku z danego URL
 async def download_file(url, output_directory, downloaded_files, cookies):
     try:
+        parsed_url = urlparse(url)
+
+        relative_path = parsed_url.path.lstrip('/')
+
         # Sprawdzanie, czy plik został już pobrany
         url_hash = hashlib.md5(url.encode('utf-8')).hexdigest()
         if url_hash in downloaded_files:
@@ -145,26 +153,38 @@ async def download_file(url, output_directory, downloaded_files, cookies):
         # Pobranie MIME typu pliku
         mime_type = await get_mime_type(url)
         if not mime_type:
-            print(f"Pominięto plik {url} - nie udało się określić typu MIME.")
+            # print(f"Pominięto plik {url} - nie udało się określić typu MIME.")
             return
 
-        # Nadawanie rozszerzenia na podstawie MIME
-        extension = extension_map.get(mime_type, '')
-        if not extension:
-            print(f"Pominięto plik {url} - MIME {mime_type} nieobsługiwane.")
+        # Pobranie rzeczywistego rozszerzenia pliku
+        file_extension = os.path.splitext(parsed_url.path)[1].lstrip('.').lower()
+
+        if not file_extension:  # Jeśli plik nie ma rozszerzenia, nadanie go na podstawie MIME
+            file_extension = extension_map.get(mime_type, '').lstrip('.')
+
+        if file_extension not in extensions:
+            # print(f"Pominięto {url} - rozszerzenie .{file_extension} lub MIME {mime_type} nie pasuje do wybranych.")
             return
 
-        # Generowanie nazwy pliku z rozszerzeniem
-        parsed_url = urlparse(url)
-        filename = os.path.basename(parsed_url.path)
 
-        # Jeśli brakuje nazwy pliku lub rozszerzenia, nadamy odpowiednie rozszerzenie
-        if not filename or '.' not in filename:
-            filename = f"{uuid.uuid4().hex}{extension}"
-        elif not filename.endswith(extension):
-            filename += extension
+        # Parsowanie URL
+        path = parsed_url.path.lstrip('/')  # Usuwamy początkowy '/', aby nie tworzyć katalogu głównego
 
-        output_path = os.path.join(output_directory, filename)
+        # Jeśli URL kończy się "/", traktujemy go jako katalog i nadajemy domyślną nazwę pliku
+        if path.endswith('/'):
+            path += "index" + file_extension
+
+        # Tworzenie pełnej ścieżki katalogu, w którym zapisany będzie plik
+        file_directory = os.path.join(output_directory, os.path.dirname(path))
+        ensure_directory(file_directory)  # Tworzenie katalogu, jeśli nie istnieje
+
+        # Nazwa pliku
+        filename = os.path.basename(path)
+        if not filename:  # Jeśli nie ma nazwy pliku, generujemy ją losowo
+            filename = f"{uuid.uuid4().hex}{file_extension}"
+
+        # Finalna ścieżka zapisu pliku
+        output_path = os.path.join(file_directory, filename)
 
         # Sprawdzanie, czy plik już istnieje
         if os.path.exists(output_path):
@@ -177,6 +197,7 @@ async def download_file(url, output_directory, downloaded_files, cookies):
             print(f"Pobrano: {url} do {output_path}")
     except Exception as e:
         print(f"Błąd przy pobieraniu pliku {url}: {e}")
+
 
 
 
@@ -194,6 +215,7 @@ def get_dynamic_page_content(url, extensions):
             WebDriverWait(driver, 15).until(
                 EC.presence_of_element_located((By.TAG_NAME, "body"))
             )
+            driver.set_page_load_timeout(15)
             page_source = driver.page_source
 
             # Pobranie dynamicznie załadowanych linków i obrazów
@@ -235,10 +257,14 @@ async def get_mime_type(url):
 
 
 def is_symlink_loop(url, visited_symlinks):
-    real_path = os.path.realpath(url)
-    if real_path in visited_symlinks:
-        return True
-    visited_symlinks.add(real_path)
+    try:
+        real_path = os.path.realpath(url)  # Pobieramy rzeczywistą ścieżkę
+        if real_path in visited_symlinks:
+            print(f"🛑 Wykryto zapętlony symlink: {url} → {real_path}")
+            return True
+        visited_symlinks.add(real_path)
+    except Exception as e:
+        print(f"Błąd przy sprawdzaniu symlinków dla {url}: {e}")
     return False
 
 """def has_repeating_segments(url):
@@ -254,12 +280,11 @@ async def process_page(url, extensions, visited, downloaded_files, output_direct
     if visited_symlinks is None:
         visited_symlinks = set()
 
-    """if has_repeating_segments(url):
-        print(f"Pominięto {url} - wykryto potencjalną nieskończoną pętlę.")
-        return"""
+    if is_symlink_loop(url, visited_symlinks):
+        return
 
     # Jeśli strona została już odwiedzona, pomiń
-    if url in visited or is_symlink_loop(url, visited_symlinks):
+    if url in visited:
         return
 
     # Dodaj stronę do odwiedzonych
@@ -292,9 +317,14 @@ async def process_page(url, extensions, visited, downloaded_files, output_direct
         html_content, dynamic_links = get_dynamic_page_content(url, extensions)
 
         # Połącz linki z DOM dynamicznym i statycznym
-        all_links = set(re.findall(r'href=["\'](.*?)["\']|src=["\'](.*?)["\']', html_content))
+        """all_links = set(re.findall(r'href=["\'](.*?)["\']|src=["\'](.*?)["\']', html_content))
         all_links.update(dynamic_links)
-        all_links = {urljoin(url, link[0] or link[1]) for link in all_links}
+        all_links = {urljoin(url, link[0] or link[1]) for link in all_links}"""
+
+        all_links = set()
+        for match in re.findall(r'href=["\'](.*?)["\']|src=["\'](.*?)["\']', html_content):
+            all_links.add(urljoin(url, match[0] or match[1]))
+
 
         # Iteruj po znalezionych linkach
         async with semaphore:  # Kontrola równoległych zadań
@@ -303,20 +333,30 @@ async def process_page(url, extensions, visited, downloaded_files, output_direct
                     # Pobieranie MIME i nadawanie rozszerzenia na podstawie MIME
                     mime_type = await get_mime_type(file_url)
 
-                    if mime_type in extension_map:
-                        extension = extension_map[mime_type]
+                    parsed_url = urlparse(file_url)
+                    file_extension = os.path.splitext(parsed_url.path)[1].lstrip('.').lower()
 
-                        # Jeśli rozszerzenie MIME pasuje do rozszerzeń podanych w argumentach
-                        if any(ext == extension.lstrip('.') for ext in extensions):
+                    # Sprawdź, czy plik ma rozszerzenie pasujące do podanych przez użytkownika
+                    if file_extension in extensions:
+                        await download_file(file_url, output_directory, downloaded_files, cookies)
+                    elif not file_extension:  # Jeśli plik nie ma rozszerzenia, sprawdź MIME
+                        mime_type = await get_mime_type(file_url)
+                        expected_extension = extension_map.get(mime_type, '').lstrip('.')
+
+                        if expected_extension in extensions:
                             await download_file(file_url, output_directory, downloaded_files, cookies)
                         else:
-                            print(
-                                f"Pominięto {file_url} - MIME {mime_type} pasuje do {extension}, ale rozszerzenie nie pasuje do filtrów.")
+                            print(f"Pominięto {file_url} - MIME {mime_type} nie pasuje do wybranych rozszerzeń.")
                     else:
-                        print(f"Pominięto {file_url} - MIME {mime_type} nie znajduje się w mapie rozszerzeń.")
+                        print(f"Pominięto {file_url} - rozszerzenie .{file_extension} nie pasuje do wybranych rozszerzeń.")
+
 
                     # Wywołaj rekurencyjnie `process_page` dla znalezionych linków, zwiększając głębokość
-                    await process_page(file_url, extensions, visited, downloaded_files, output_directory, semaphore, depth=depth + 1, max_depth=max_depth, cookies=cookies)
+                    try:
+                        await process_page(file_url, extensions, visited, downloaded_files, output_directory, semaphore, depth=depth + 1, max_depth=max_depth, cookies=cookies)
+                    except Exception as e:
+                        print(f"Error processing {file_url}: {e}")
+
 
                 except Exception as e:
                     print(f"Błąd przy przetwarzaniu linku {file_url}: {e}")
@@ -338,6 +378,9 @@ if __name__ == "__main__":
     parser.add_argument("--max-workers", type=int, default=5, help="Maksymalna liczba jednoczesnych połączeń (domyślnie 5)")
 
     args = parser.parse_args()
+
+    if not args.url.endswith('/'):
+        args.url += '/'
 
     extensions = [ext.strip().lower().lstrip('*.') for ext in args.extensions.split('|')]
     domain = urlparse(args.url).netloc.replace('.', '_')
